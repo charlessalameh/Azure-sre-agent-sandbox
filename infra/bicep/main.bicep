@@ -239,6 +239,7 @@ module defaultActionGroup 'modules/action-group.bicep' = if (deployActionGroup) 
   name: 'deploy-default-action-group'
   params: {
     name: 'ag-${workloadName}'
+    location: location
     tags: tags
     shortName: actionGroupShortName
     webhookServiceUri: incidentWebhookServiceUri
