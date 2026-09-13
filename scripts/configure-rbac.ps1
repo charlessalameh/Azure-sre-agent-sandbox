@@ -41,6 +41,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Renders a single banner row padded (or truncated) to the fixed box width so
+# the border stays aligned regardless of how long the interpolated values are.
+function Format-BoxRow {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [Parameter()]
+        [int]$InnerWidth = 78
+    )
+
+    if ($Text.Length -gt $InnerWidth) {
+        $Text = $Text.Substring(0, $InnerWidth - 3) + '...'
+    }
+
+    return "$([char]0x2551)$($Text.PadRight($InnerWidth))$([char]0x2551)"
+}
+
 Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -337,7 +357,7 @@ else {
 ║  1. Get the SRE Agent managed identity Object ID                             ║
 ║  2. Re-run this script with -SreAgentPrincipalId                             ║
 ║                                                                              ║
-║     .\configure-rbac.ps1 -ResourceGroupName "$ResourceGroupName" ``
+$(Format-BoxRow "     .\configure-rbac.ps1 -ResourceGroupName ""$ResourceGroupName"" ``")
 ║         -SreAgentPrincipalId "<object-id>"                                   ║
 ║                                                                              ║
 ║  SRE Agent RBAC Roles (assigned via Azure Portal):                           ║

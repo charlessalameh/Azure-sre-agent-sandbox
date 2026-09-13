@@ -63,6 +63,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Renders a single banner row padded (or truncated) to the fixed box width so
+# the border stays aligned regardless of how long the interpolated values are.
+function Format-BoxRow {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [Parameter()]
+        [int]$InnerWidth = 78
+    )
+
+    if ($Text.Length -gt $InnerWidth) {
+        $Text = $Text.Substring(0, $InnerWidth - 3) + '...'
+    }
+
+    return "$([char]0x2551)$($Text.PadRight($InnerWidth))$([char]0x2551)"
+}
+
 function Invoke-AzCliJson {
     [CmdletBinding()]
     param(
@@ -909,14 +929,14 @@ Write-Host @"
 ║                         Deployment Complete! 🎉                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Resources Deployed:                                                         ║
-║    • AKS Cluster:    $($aksName.PadRight(56))║
-║    • Store Front:    $($siteUrlDisplay.PadRight(56))║
+$(Format-BoxRow "    • AKS Cluster:    $aksName")
+$(Format-BoxRow "    • Store Front:    $siteUrlDisplay")
 ║                                                                              ║
 ║  ℹ️  SRE Agent: See deployment output above for status                       ║
 ║    Portal: https://aka.ms/sreagent/portal                                    ║
 ║                                                                              ║
 ║  Quick Start (after SRE Agent setup):                                        ║
-║    1. Open the store: $siteUrlDisplay
+$(Format-BoxRow "    1. Open the store: $siteUrlDisplay")
 ║    2. Break something: break-oom                                             ║
 ║    3. Refresh store to see failure                                           ║
 ║    4. Ask SRE Agent: "Why are pods crashing in the pets namespace?"          ║
