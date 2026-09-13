@@ -31,6 +31,9 @@ azureconfig.json
 !extensions.json
 !**/bicepconfig.json
 
+# SRE Agent configuration assets are authored by hand, not compiled output
+!sre-config/**/*.json
+
 # Bicep lock files
 .bicep/
 
