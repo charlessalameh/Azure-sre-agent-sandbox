@@ -451,11 +451,11 @@ Write-Host @"
 ║                    Azure SRE Agent Demo Lab Deployment                       ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  This script deploys:                                                        ║
-║  • Azure Kubernetes Service (AKS) with multi-service demo app               ║
+║  • Azure Kubernetes Service (AKS) with multi-service demo app                ║
 ║  • Azure Container Registry                                                  ║
-║  • Observability stack (Log Analytics, App Insights, Grafana)               ║
-║  • Key Vault for secrets management                                         ║
-║  • Azure SRE Agent for AI-powered diagnostics                               ║
+║  • Observability stack (Log Analytics, App Insights, Grafana)                ║
+║  • Key Vault for secrets management                                          ║
+║  • Azure SRE Agent for AI-powered diagnostics                                ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 "@ -ForegroundColor Cyan
