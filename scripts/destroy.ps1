@@ -35,7 +35,7 @@ Write-Host @"
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    Azure SRE Agent Demo Lab - DESTROY                        ║
 ║                                                                              ║
-║                         ⚠️  WARNING ⚠️                                        ║
+║                         ⚠️  WARNING ⚠️                                       ║
 ║                                                                              ║
 ║  This will PERMANENTLY DELETE all resources in the resource group!           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -166,13 +166,13 @@ Write-Host "   ✅ kubectl context cleaned up" -ForegroundColor Green
 Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                        Cleanup Complete! 🧹                                   ║
+║                        Cleanup Complete! 🧹                                  ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
 ║  The resource group deletion has been submitted.                             ║
 ║  Monitor progress in Azure Portal or run:                                    ║
 ║                                                                              ║
-║    az group show --name $($ResourceGroupName.PadRight(39))║
+║    az group show --name $($ResourceGroupName.PadRight(53))║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

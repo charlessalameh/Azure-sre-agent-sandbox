@@ -167,7 +167,7 @@ function menu {
     Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    Azure SRE Agent Demo Lab                                   ║
+║                    Azure SRE Agent Demo Lab                                  ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Commands:                                                                   ║
 ║    az login --use-device-code  - Login to Azure                              ║

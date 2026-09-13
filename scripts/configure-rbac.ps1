@@ -44,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    Azure RBAC Configuration Script                            ║
+║                    Azure RBAC Configuration Script                           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 "@ -ForegroundColor Cyan
@@ -311,15 +311,15 @@ if ($SreAgentPrincipalId) {
     Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                      RBAC Configuration Complete ✅                           ║
+║                      RBAC Configuration Complete ✅                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
-║  SRE Agent managed identity roles were configured in this run.              ║
+║  SRE Agent managed identity roles were configured in this run.               ║
 ║                                                                              ║
 ║  SRE Agent RBAC Roles (assigned via Azure Portal):                           ║
-║  • SRE Agent Admin - Full access to create/manage agent                     ║
-║  • SRE Agent Standard User - Chat and diagnose capabilities                 ║
-║  • SRE Agent Reader - View-only access                                      ║
+║  • SRE Agent Admin - Full access to create/manage agent                      ║
+║  • SRE Agent Standard User - Chat and diagnose capabilities                  ║
+║  • SRE Agent Reader - View-only access                                       ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
@@ -329,21 +329,21 @@ else {
     Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                      RBAC Configuration Complete ✅                           ║
+║                      RBAC Configuration Complete ✅                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
-║  To configure SRE Agent resource roles in a standalone run:                 ║
+║  To configure SRE Agent resource roles in a standalone run:                  ║
 ║                                                                              ║
-║  1. Get the SRE Agent managed identity Object ID                            ║
-║  2. Re-run this script with -SreAgentPrincipalId                            ║
+║  1. Get the SRE Agent managed identity Object ID                             ║
+║  2. Re-run this script with -SreAgentPrincipalId                             ║
 ║                                                                              ║
 ║     .\configure-rbac.ps1 -ResourceGroupName "$ResourceGroupName" ``
 ║         -SreAgentPrincipalId "<object-id>"                                   ║
 ║                                                                              ║
 ║  SRE Agent RBAC Roles (assigned via Azure Portal):                           ║
-║  • SRE Agent Admin - Full access to create/manage agent                     ║
-║  • SRE Agent Standard User - Chat and diagnose capabilities                 ║
-║  • SRE Agent Reader - View-only access                                      ║
+║  • SRE Agent Admin - Full access to create/manage agent                      ║
+║  • SRE Agent Standard User - Chat and diagnose capabilities                  ║
+║  • SRE Agent Reader - View-only access                                       ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

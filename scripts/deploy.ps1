@@ -909,8 +909,8 @@ Write-Host @"
 ║                         Deployment Complete! 🎉                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Resources Deployed:                                                         ║
-║    • AKS Cluster:    $($aksName.PadRight(44))║
-║    • Store Front:    $($siteUrlDisplay.PadRight(44))║
+║    • AKS Cluster:    $($aksName.PadRight(56))║
+║    • Store Front:    $($siteUrlDisplay.PadRight(56))║
 ║                                                                              ║
 ║  ℹ️  SRE Agent: See deployment output above for status                       ║
 ║    Portal: https://aka.ms/sreagent/portal                                    ║
@@ -919,7 +919,7 @@ Write-Host @"
 ║    1. Open the store: $siteUrlDisplay
 ║    2. Break something: break-oom                                             ║
 ║    3. Refresh store to see failure                                           ║
-║    4. Ask SRE Agent: "Why are pods crashing in the pets namespace?"         ║
+║    4. Ask SRE Agent: "Why are pods crashing in the pets namespace?"          ║
 ║    5. Fix it: fix-all                                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
