@@ -30,12 +30,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Renders a single banner row padded (or truncated) to the fixed box width so
+# the border stays aligned regardless of how long the interpolated values are.
+function Format-BoxRow {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [Parameter()]
+        [int]$InnerWidth = 78
+    )
+
+    if ($Text.Length -gt $InnerWidth) {
+        $Text = $Text.Substring(0, $InnerWidth - 3) + '...'
+    }
+
+    return "$([char]0x2551)$($Text.PadRight($InnerWidth))$([char]0x2551)"
+}
+
 Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    Azure SRE Agent Demo Lab - DESTROY                        ║
 ║                                                                              ║
-║                         ⚠️  WARNING ⚠️                                        ║
+║                              ***  WARNING  ***                               ║
 ║                                                                              ║
 ║  This will PERMANENTLY DELETE all resources in the resource group!           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -166,13 +186,13 @@ Write-Host "   ✅ kubectl context cleaned up" -ForegroundColor Green
 Write-Host @"
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                        Cleanup Complete! 🧹                                   ║
+║                        Cleanup Complete! 🧹                                  ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                                                                              ║
 ║  The resource group deletion has been submitted.                             ║
 ║  Monitor progress in Azure Portal or run:                                    ║
 ║                                                                              ║
-║    az group show --name $($ResourceGroupName.PadRight(39))║
+$(Format-BoxRow "    az group show --name $ResourceGroupName")
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

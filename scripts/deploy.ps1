@@ -63,6 +63,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Renders a single banner row padded (or truncated) to the fixed box width so
+# the border stays aligned regardless of how long the interpolated values are.
+function Format-BoxRow {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$Text = '',
+
+        [Parameter()]
+        [int]$InnerWidth = 78
+    )
+
+    if ($Text.Length -gt $InnerWidth) {
+        $Text = $Text.Substring(0, $InnerWidth - 3) + '...'
+    }
+
+    return "$([char]0x2551)$($Text.PadRight($InnerWidth))$([char]0x2551)"
+}
+
 function Invoke-AzCliJson {
     [CmdletBinding()]
     param(
@@ -451,11 +471,11 @@ Write-Host @"
 ║                    Azure SRE Agent Demo Lab Deployment                       ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  This script deploys:                                                        ║
-║  • Azure Kubernetes Service (AKS) with multi-service demo app               ║
+║  • Azure Kubernetes Service (AKS) with multi-service demo app                ║
 ║  • Azure Container Registry                                                  ║
-║  • Observability stack (Log Analytics, App Insights, Grafana)               ║
-║  • Key Vault for secrets management                                         ║
-║  • Azure SRE Agent for AI-powered diagnostics                               ║
+║  • Observability stack (Log Analytics, App Insights, Grafana)                ║
+║  • Key Vault for secrets management                                          ║
+║  • Azure SRE Agent for AI-powered diagnostics                                ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 "@ -ForegroundColor Cyan
@@ -909,17 +929,17 @@ Write-Host @"
 ║                         Deployment Complete! 🎉                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Resources Deployed:                                                         ║
-║    • AKS Cluster:    $($aksName.PadRight(44))║
-║    • Store Front:    $($siteUrlDisplay.PadRight(44))║
+$(Format-BoxRow "    • AKS Cluster:    $aksName")
+$(Format-BoxRow "    • Store Front:    $siteUrlDisplay")
 ║                                                                              ║
-║  ℹ️  SRE Agent: See deployment output above for status                       ║
+║  SRE Agent: See deployment output above for status                           ║
 ║    Portal: https://aka.ms/sreagent/portal                                    ║
 ║                                                                              ║
 ║  Quick Start (after SRE Agent setup):                                        ║
-║    1. Open the store: $siteUrlDisplay
+$(Format-BoxRow "    1. Open the store: $siteUrlDisplay")
 ║    2. Break something: break-oom                                             ║
 ║    3. Refresh store to see failure                                           ║
-║    4. Ask SRE Agent: "Why are pods crashing in the pets namespace?"         ║
+║    4. Ask SRE Agent: "Why are pods crashing in the pets namespace?"          ║
 ║    5. Fix it: fix-all                                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

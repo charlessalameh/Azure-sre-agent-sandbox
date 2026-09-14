@@ -24,9 +24,14 @@ param webhookServiceUri string = ''
 
 var hasWebhookReceiver = !empty(webhookServiceUri)
 
+// Action groups are not offered in every region. australiaeast is not in the
+// supported list, so fall back to the 'global' location there. Other regions
+// keep their existing location to avoid relocating deployed action groups.
+var actionGroupLocation = location == 'australiaeast' ? 'global' : location
+
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: name
-  location: location
+  location: actionGroupLocation
   tags: tags
   properties: {
     enabled: true
