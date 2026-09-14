@@ -55,7 +55,7 @@ Write-Host @"
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    Azure SRE Agent Demo Lab - DESTROY                        ║
 ║                                                                              ║
-║                         ⚠️  WARNING ⚠️                                       ║
+║                              ***  WARNING  ***                               ║
 ║                                                                              ║
 ║  This will PERMANENTLY DELETE all resources in the resource group!           ║
 ╚══════════════════════════════════════════════════════════════════════════════╝

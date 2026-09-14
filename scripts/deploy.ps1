@@ -932,7 +932,7 @@ Write-Host @"
 $(Format-BoxRow "    • AKS Cluster:    $aksName")
 $(Format-BoxRow "    • Store Front:    $siteUrlDisplay")
 ║                                                                              ║
-║  ℹ️  SRE Agent: See deployment output above for status                       ║
+║  SRE Agent: See deployment output above for status                           ║
 ║    Portal: https://aka.ms/sreagent/portal                                    ║
 ║                                                                              ║
 ║  Quick Start (after SRE Agent setup):                                        ║
