@@ -62,6 +62,36 @@ function Invoke-GrafanaApi {
 }
 
 $health = Invoke-GrafanaApi -Method GET -Path '/api/org'
+
+# A Grafana data-plane role assigned during deployment can take several minutes
+# to propagate, so a 401 immediately after deployment is usually transient.
+if ($health.StatusCode -eq 401) {
+    Write-Host 'Waiting for Grafana role assignment to propagate...' -ForegroundColor Yellow
+    $deadline = (Get-Date).AddMinutes(10)
+    while ($health.StatusCode -eq 401 -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 20
+        $token = az account get-access-token --resource https://dashboard.azure.com --query accessToken --output tsv 2>$null
+        $health = Invoke-GrafanaApi -Method GET -Path '/api/org'
+    }
+    if ($health.StatusCode -eq 200) {
+        Write-Host 'Grafana access granted.' -ForegroundColor Green
+    }
+}
+
+if ($health.StatusCode -eq 401) {
+    throw @"
+Grafana API access failed with HTTP 401 (no Grafana role assigned).
+
+Assign yourself Grafana Admin on the workspace, then re-run this script:
+
+  az role assignment create --role "Grafana Admin" ``
+      --assignee <your-upn-or-object-id> ``
+      --scope $($grafana.id)
+
+Newly assigned Grafana roles can take up to an hour to propagate.
+"@
+}
+
 if ($health.StatusCode -ne 200) { throw "Grafana API access failed with HTTP $($health.StatusCode)." }
 
 $datasources = Invoke-GrafanaApi -Method GET -Path '/api/datasources'
