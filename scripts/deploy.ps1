@@ -853,9 +853,9 @@ if ($outputs.sreAgentId.value) {
     $configureScript = Join-Path $PSScriptRoot "configure-sre-agent.ps1"
     if (Test-Path $configureScript) {
         try {
-            $configureParams = @{ ResourceGroupName = $resourceGroupName }
-            if ($EnableMicrosoftLearnMcp) {
-                $configureParams.EnableMicrosoftLearnMcp = $true
+            $configureParams = @{
+                ResourceGroupName       = $resourceGroupName
+                EnableMicrosoftLearnMcp = $true
             }
             & $configureScript @configureParams
             if ($LASTEXITCODE -ne 0) {
@@ -870,9 +870,7 @@ if ($outputs.sreAgentId.value) {
             $verifyParams = @{
                 ResourceGroupName = $resourceGroupName
                 WorkloadName      = $WorkloadName
-            }
-            if ($EnableMicrosoftLearnMcp) {
-                $verifyParams.RequireMicrosoftLearnMcp = $true
+                RequireMicrosoftLearnMcp = $true
             }
             & $verifyScript @verifyParams
             if ($LASTEXITCODE -ne 0) {
