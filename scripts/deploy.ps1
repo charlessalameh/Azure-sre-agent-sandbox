@@ -52,9 +52,6 @@ param(
     [switch]$SkipSreAgent,
 
     [Parameter()]
-    [switch]$EnableMicrosoftLearnMcp,
-
-    [Parameter()]
     [switch]$WhatIf,
 
     [Parameter()]
@@ -854,8 +851,7 @@ if ($outputs.sreAgentId.value) {
     if (Test-Path $configureScript) {
         try {
             $configureParams = @{
-                ResourceGroupName       = $resourceGroupName
-                EnableMicrosoftLearnMcp = $true
+                ResourceGroupName = $resourceGroupName
             }
             & $configureScript @configureParams
             if ($LASTEXITCODE -ne 0) {

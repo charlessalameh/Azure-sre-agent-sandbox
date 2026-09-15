@@ -23,9 +23,6 @@
 .PARAMETER GitHubRepo
     Optional GitHub repository (owner/repo format) for code analysis agent.
 
-.PARAMETER EnableMicrosoftLearnMcp
-    Retained for compatibility. The Microsoft Learn MCP connector is created by default.
-
 .PARAMETER RemoveMicrosoftLearnMcp
     Remove the Microsoft Learn MCP connector and exit without changing other configuration.
 
@@ -72,9 +69,6 @@ param(
     [switch]$SkipConnectors,
 
     [Parameter()]
-    [switch]$EnableMicrosoftLearnMcp,
-
-    [Parameter()]
     [switch]$RemoveMicrosoftLearnMcp,
 
     [Parameter()]
@@ -84,10 +78,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $configurationFailures = [System.Collections.Generic.List[string]]::new()
 $githubPreflightPassed = $false
-
-if ($EnableMicrosoftLearnMcp -and $RemoveMicrosoftLearnMcp) {
-    throw 'EnableMicrosoftLearnMcp and RemoveMicrosoftLearnMcp cannot be used together.'
-}
 
 function Add-ConfigurationFailure {
     param([Parameter(Mandatory)][string]$Component, [Parameter(Mandatory)][string]$Reason)
