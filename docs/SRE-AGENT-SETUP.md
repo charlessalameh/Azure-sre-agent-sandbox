@@ -327,6 +327,24 @@ the deployment output to view pod readiness, workload CPU, pod restarts, and
 node memory. Dashboard provisioning uses Entra authentication with the
 `https://dashboard.azure.com` audience; API keys remain disabled.
 
+Data-plane access is governed by a Grafana role that is separate from Azure
+resource RBAC, so the deployment assigns the deploying user **Grafana Admin**
+on the workspace. Without it the Grafana REST API rejects the token and
+provisioning fails with `Grafana API access failed with HTTP 401`. If you hit
+that on a workspace created before this assignment existed, grant it manually
+and re-run `scripts/configure-grafana.ps1`:
+
+```powershell
+az role assignment create --role "Grafana Admin" `
+    --assignee (az ad signed-in-user show --query id --output tsv) `
+    --scope (az resource list --resource-group "rg-srelab-eastus2" `
+        --resource-type Microsoft.Dashboard/grafana --query "[0].id" --output tsv)
+```
+
+Newly assigned Grafana roles can take several minutes — occasionally up to an
+hour — to propagate. `configure-grafana.ps1` retries a 401 for up to 10 minutes
+before failing.
+
 Container Insights is verified separately by checking ready `ama-logs` pods,
 the `ContainerInsightsExtension` DCR association, and recent `ContainerLogV2`
 and `KubePodInventory` records. The current profile intentionally uses

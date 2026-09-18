@@ -209,6 +209,15 @@ sre-config/
     └── github-mcp.yaml           # GitHub MCP connector template
 ```
 
+The `sre-config/grafana/` directory holds the Managed Grafana dashboard that
+`scripts/configure-grafana.ps1` provisions after deployment:
+
+```
+sre-config/
+└── grafana/
+    └── aks-overview.json          # SRE Lab AKS overview dashboard
+```
+
 ## 📚 Documentation
 
 - [SRE Agent Setup Guide](docs/SRE-AGENT-SETUP.md) — deployment, RBAC, and configuration

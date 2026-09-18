@@ -148,8 +148,23 @@ resource grafanaMonitoringReaderRole 'Microsoft.Authorization/roleAssignments@20
   }
 }
 
-resource aksMetricsPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(azureMonitorWorkspace.id, aksCluster.id, 'MonitoringMetricsPublisher')
+// Grant the deploying user Grafana Admin on the workspace.
+// Without a Grafana data-plane role, the Grafana REST API rejects the
+// deployer's token with HTTP 401, which breaks dashboard provisioning.
+resource grafanaDeployerAdminRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(grafana.id, deployer().objectId, '22926164-76b3-42b3-bc55-97df8dab3e41')
+  scope: grafana
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '22926164-76b3-42b3-bc55-97df8dab3e41'
+    ) // Grafana Admin
+    principalId: deployer().objectId
+    principalType: 'User'
+  }
+}
+
+resource aksMetricsPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {  name: guid(azureMonitorWorkspace.id, aksCluster.id, 'MonitoringMetricsPublisher')
   scope: azureMonitorWorkspace
   properties: {
     roleDefinitionId: subscriptionResourceId(
