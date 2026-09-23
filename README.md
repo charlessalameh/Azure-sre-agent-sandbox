@@ -229,9 +229,6 @@ sre-config/
 
 Contributions welcome! Feel free to open issues or submit PRs.
 
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
