@@ -13,7 +13,6 @@ A fully automated Azure environment for demonstrating **Azure SRE Agent** capabi
 - **Ready-to-use scripts** for deployment and teardown
 - **Dev container** for consistent development experience
 
-[![repologbook.com](https://repoanalyticsprod4rquhaw.z19.web.core.windows.net/badges/1MnY7iHYBSlfgcqUa-ct9w.svg)](https://repologbook.com/)
 
 ## 🚀 Quick Start
 
