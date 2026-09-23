@@ -23,8 +23,13 @@ param deployActionGroup = true
 // AKS Configuration - cost-optimized for demo
 param systemNodeVmSize = 'Standard_D2s_v5'
 param userNodeVmSize = 'Standard_D2s_v5'
-param systemNodeCount = 2
-param userNodeCount = 3
+param systemNodeCount = 1   // was 2 - low-cost lab profile
+param userNodeCount = 2     // was 3 - app requests ~1.1 vCPU in total, 2 nodes is plenty
+
+// Low-cost lab profile (Charlie) - AKS Free tier (no uptime SLA) and capped autoscaling
+param aksSkuTier = 'Free'       // was hardcoded 'Standard' (+$0.10/hr)
+param systemNodeMaxCount = 2    // was hardcoded 5
+param userNodeMaxCount = 3      // was hardcoded 10 - caps cost if a scenario triggers scale-out
 
 // Tags
 param tags = {

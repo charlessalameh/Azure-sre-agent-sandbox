@@ -79,6 +79,23 @@ param systemNodeCount int = 2
 @maxValue(10)
 param userNodeCount int = 3
 
+@description('AKS pricing tier (Free = no uptime SLA, cheaper for labs)')
+@allowed([
+  'Free'
+  'Standard'
+])
+param aksSkuTier string = 'Standard'
+
+@description('System node pool autoscaler maximum node count')
+@minValue(1)
+@maxValue(5)
+param systemNodeMaxCount int = 5
+
+@description('User node pool autoscaler maximum node count')
+@minValue(1)
+@maxValue(10)
+param userNodeMaxCount int = 10
+
 @description('Tags to apply to all resources')
 param tags object = {
   workload: 'sre-agent-demo'
@@ -185,6 +202,9 @@ module aks 'modules/aks.bicep' = {
     userNodeVmSize: userNodeVmSize
     systemNodeCount: systemNodeCount
     userNodeCount: userNodeCount
+    skuTier: aksSkuTier
+    systemNodeMaxCount: systemNodeMaxCount
+    userNodeMaxCount: userNodeMaxCount
     vnetSubnetId: network.outputs.aksSubnetId
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
     acrId: containerRegistry.outputs.acrId

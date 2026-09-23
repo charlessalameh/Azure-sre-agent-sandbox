@@ -33,6 +33,19 @@ param systemNodeCount int
 @description('User node pool node count')
 param userNodeCount int
 
+@description('AKS pricing tier')
+@allowed([
+  'Free'
+  'Standard'
+])
+param skuTier string = 'Standard'
+
+@description('System node pool autoscaler maximum node count')
+param systemNodeMaxCount int = 5
+
+@description('User node pool autoscaler maximum node count')
+param userNodeMaxCount int = 10
+
 @description('Subnet ID for AKS nodes')
 param vnetSubnetId string
 
@@ -55,7 +68,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
   }
   sku: {
     name: 'Base'
-    tier: 'Standard' // Standard tier for SLA - recommended for demos
+    tier: skuTier // Standard = uptime SLA; Free = cheaper for labs
   }
   properties: {
     kubernetesVersion: empty(kubernetesVersion) ? null : kubernetesVersion
@@ -98,7 +111,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
         vnetSubnetID: vnetSubnetId
         enableAutoScaling: true
         minCount: 1
-        maxCount: 5
+        maxCount: systemNodeMaxCount
         nodeTaints: [
           'CriticalAddonsOnly=true:NoSchedule'
         ]
@@ -116,7 +129,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
         vnetSubnetID: vnetSubnetId
         enableAutoScaling: true
         minCount: 1
-        maxCount: 10
+        maxCount: userNodeMaxCount
         nodeLabels: {
           'nodepool-type': 'user'
         }
