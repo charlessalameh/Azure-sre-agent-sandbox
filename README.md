@@ -155,6 +155,7 @@ deployment is considered ready.
 
 ### Deployment Scripts (PowerShell)
 
+ 
 > **Note**: These PowerShell scripts deploy to Azure and can be run from the dev container, locally on Windows, or on any system with PowerShell Core installed.
 
 | Command | Description |
