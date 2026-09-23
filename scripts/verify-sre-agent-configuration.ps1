@@ -1,0 +1,201 @@
+<#
+.SYNOPSIS
+    Verifies the expected SRE Agent configuration state.
+
+.PARAMETER ResourceGroupName
+    Name of the resource group containing the SRE Agent.
+
+.PARAMETER WorkloadName
+    Workload name used when the lab was deployed.
+
+.EXAMPLE
+    .\verify-sre-agent-configuration.ps1 -ResourceGroupName "rg-srelab-eastus2"
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$ResourceGroupName,
+
+    [Parameter()]
+    [ValidateLength(3, 10)]
+    [string]$WorkloadName = 'srelab',
+
+    [Parameter()]
+    [switch]$RequireMicrosoftLearnMcp
+)
+
+$ErrorActionPreference = 'Stop'
+$failures = [System.Collections.Generic.List[string]]::new()
+
+function Add-Failure {
+    param([Parameter(Mandatory)][string]$Component, [Parameter(Mandatory)][string]$Reason)
+    [void]$failures.Add("${Component}: $Reason")
+    Write-Host "  ❌ ${Component}: $Reason" -ForegroundColor Red
+}
+
+function Invoke-DataplaneApi {
+    param(
+        [Parameter(Mandatory)][string]$Url,
+        [Parameter(Mandatory)][string]$Token
+    )
+
+    $output = & curl -s -w "`n%{http_code}" -H "Authorization: Bearer $Token" $Url 2>&1
+    $lines = ($output -join "`n") -split "`n"
+    $statusCode = 0
+    [void][int]::TryParse($lines[-1].Trim(), [ref]$statusCode)
+    $body = if ($lines.Count -gt 1) { ($lines[0..($lines.Count - 2)]) -join "`n" } else { '' }
+    return @{ StatusCode = $statusCode; Body = $body }
+}
+
+Write-Host "Verifying SRE Agent configuration in $ResourceGroupName..." -ForegroundColor Cyan
+
+$agentListRaw = az resource list --resource-group $ResourceGroupName --resource-type "Microsoft.App/agents" --output json 2>$null | Out-String
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($agentListRaw)) {
+    throw "Could not list SRE Agent resources in $ResourceGroupName."
+}
+
+$agents = @($agentListRaw | ConvertFrom-Json)
+if ($agents.Count -ne 1) {
+    throw "Expected exactly one SRE Agent in $ResourceGroupName; found $($agents.Count)."
+}
+
+$agentId = $agents[0].id
+$agentDetailRaw = az resource show --ids $agentId --api-version 2025-05-01-preview --output json 2>$null | Out-String
+$agentDetail = $agentDetailRaw | ConvertFrom-Json
+$agentEndpoint = $agentDetail.properties.agentEndpoint
+if ([string]::IsNullOrWhiteSpace($agentEndpoint)) {
+    throw 'SRE Agent endpoint is missing.'
+}
+
+if ($agentDetail.properties.incidentManagementConfiguration.type -eq 'AzMonitor') {
+    Write-Host '  ✅ Azure Monitor incident platform' -ForegroundColor Green
+}
+else {
+    Add-Failure -Component 'Azure Monitor incident platform' -Reason 'Expected incidentManagementConfiguration.type=AzMonitor'
+}
+
+foreach ($connector in @(
+        @{ Name = 'azure-monitor'; Type = 'AzureMonitor' },
+        @{ Name = 'outlook'; Type = 'Outlook' }
+    )) {
+    $connectorUrl = "https://management.azure.com${agentId}/connectors/$($connector.Name)?api-version=2025-05-01-preview"
+    $connectorRaw = az rest --method get --url $connectorUrl --only-show-errors --output json 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($connectorRaw)) {
+        Add-Failure -Component "Portal connector/$($connector.Name)" -Reason 'ARM connector was not found'
+        continue
+    }
+
+    try {
+        $connectorState = $connectorRaw | ConvertFrom-Json
+        if ($connectorState.properties.dataConnectorType -eq $connector.Type -and
+            $connectorState.properties.provisioningState -eq 'Succeeded') {
+            Write-Host "  ✅ Portal connector/$($connector.Name)" -ForegroundColor Green
+        }
+        else {
+            Add-Failure -Component "Portal connector/$($connector.Name)" -Reason 'Connector type or provisioning state did not match'
+        }
+    }
+    catch {
+        Add-Failure -Component "Portal connector/$($connector.Name)" -Reason 'ARM response was not valid JSON'
+    }
+}
+
+$token = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+    throw 'Could not acquire an SRE Agent dataplane access token.'
+}
+
+$monitorResources = @(az resource list --resource-group $ResourceGroupName --output json 2>$null | ConvertFrom-Json)
+$requiredAlertNames = @(
+    "alert-$WorkloadName-pod-restarts",
+    "alert-$WorkloadName-http-5xx",
+    "alert-$WorkloadName-pod-failures",
+    "alert-$WorkloadName-crashloop-oom"
+)
+foreach ($alertName in $requiredAlertNames) {
+    if (@($monitorResources | Where-Object { $_.type -eq 'Microsoft.Insights/scheduledQueryRules' -and $_.name -eq $alertName }).Count -eq 1) {
+        Write-Host "  ✅ Azure Monitor alert/$alertName" -ForegroundColor Green
+    }
+    else {
+        Add-Failure -Component "Azure Monitor alert/$alertName" -Reason 'Expected alert resource was not found'
+    }
+}
+
+$actionGroupName = "ag-$WorkloadName"
+if (@($monitorResources | Where-Object { $_.type -eq 'Microsoft.Insights/actionGroups' -and $_.name -eq $actionGroupName }).Count -eq 1) {
+    Write-Host "  ✅ Azure Monitor action group/$actionGroupName" -ForegroundColor Green
+}
+else {
+    Add-Failure -Component "Azure Monitor action group/$actionGroupName" -Reason 'Expected action group resource was not found'
+}
+if ($RequireMicrosoftLearnMcp) {
+    $learnResponse = Invoke-DataplaneApi -Url "$agentEndpoint/api/v2/extendedAgent/connectors/microsoft-learn" -Token $token
+    if ($learnResponse.StatusCode -eq 200) {
+        Write-Host '  ✅ Microsoft Learn MCP connector' -ForegroundColor Green
+    }
+    else {
+        Add-Failure -Component 'Microsoft Learn MCP connector' -Reason "HTTP $($learnResponse.StatusCode)"
+    }
+}
+else {
+    Write-Host '  ℹ️  Microsoft Learn MCP connector verification not requested.' -ForegroundColor Gray
+}
+
+$checks = @(
+    @{ Name = 'Knowledge base'; Path = '/api/v1/AgentMemory/files'; Test = { param($data) @($data.files | Where-Object { $_.isIndexed }).Count -gt 0 } },
+    @{ Name = 'Custom agents'; Path = '/api/v2/extendedAgent/agents'; Test = {
+            param($data)
+            $actualNames = @($data.value | ForEach-Object { $_.name })
+            $expectedNames = @('incident-handler', 'cluster-health-monitor')
+            return @($expectedNames | Where-Object { $_ -in $actualNames }).Count -eq $expectedNames.Count
+        } },
+    @{ Name = 'Azure Monitor connector'; Path = '/api/v2/extendedAgent/connectors/azure-monitor'; Test = { param($data) $null -ne $data } },
+    @{ Name = 'Outlook connector'; Path = '/api/v2/extendedAgent/connectors/outlook'; Test = { param($data) $null -ne $data } },
+    @{ Name = 'Daily health task'; Path = '/api/v2/extendedAgent/scheduledTasks/daily-health-check'; Test = { param($data) $null -ne $data } },
+    @{ Name = 'Daily RBAC/cost/network audit task'; Path = '/api/v2/extendedAgent/scheduledTasks/daily-rbac-cost-network-audit'; Test = { param($data) $null -ne $data } },
+    @{ Name = 'Hourly automation health task'; Path = '/api/v2/extendedAgent/scheduledTasks/hourly-automation-health'; Test = { param($data) $null -ne $data } },
+    @{ Name = 'AKS incident response filter'; Path = '/api/v1/incidentplayground/filters/aks-pod-failure-handler'; Test = {
+            param($data)
+            $data.isEnabled -eq $true -and
+            $data.isDeleted -ne $true -and
+            $data.handlingAgent -eq 'incident-handler' -and
+            $data.agentMode -eq 'review' -and
+            $data.impactedService -eq 'pets' -and
+            $data.titleContains -eq 'Pet Store'
+        } },
+    @{ Name = 'AKS incident response handler'; Path = '/api/v1/incidentplayground/handlers/aks-pod-failure-handler-handler'; Test = {
+            param($data)
+            $data.incidentFilterId -eq 'aks-pod-failure-handler' -and
+            @($data.incidentProcessingGuide).Count -eq 3
+        } }
+)
+
+foreach ($check in $checks) {
+    $response = Invoke-DataplaneApi -Url "$agentEndpoint$($check.Path)" -Token $token
+    if ($response.StatusCode -ne 200) {
+        Add-Failure -Component $check.Name -Reason "HTTP $($response.StatusCode)"
+        continue
+    }
+
+    try {
+        $data = $response.Body | ConvertFrom-Json
+        if (& $check.Test $data) {
+            Write-Host "  ✅ $($check.Name)" -ForegroundColor Green
+        }
+        else {
+            Add-Failure -Component $check.Name -Reason 'Expected state was not found'
+        }
+    }
+    catch {
+        Add-Failure -Component $check.Name -Reason 'Response was not valid JSON'
+    }
+}
+
+if ($failures.Count -gt 0) {
+    Write-Host "`nSRE Agent verification failed with $($failures.Count) failure(s)." -ForegroundColor Red
+    $failures | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+    exit 1
+}
+
+Write-Host "`nSRE Agent expected state verified." -ForegroundColor Green

@@ -1,0 +1,413 @@
+name: Lab-rot watch
+
+# Weekly static-analysis sweep for lab/sandbox/demo repos.
+# Looks for the kinds of drift that quietly break lab guides over time.
+# Opens an issue with a checklist if anything is suspect; stays silent otherwise.
+#
+# What this checks (high level):
+# 1) Scenario parity across repo, docs, and README claims
+# 2) External link rot in README and docs
+# 3) Bicep API-version staleness
+# 4) Container image drift risk (mutable tags like :latest)
+# 5) SRE Agent API-version consistency (IaC vs scripts)
+# 6) Azure SDK dependency drift (when applicable)
+# 7) Lightweight LLM drift check on scenario docs
+# 8) Weekly issue creation only when findings exist
+
+on:
+  schedule:
+    - cron: "0 15 * * 1" # Mondays 15:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  models: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: lab-rot-watch
+  cancel-in-progress: false
+
+jobs:
+  rot:
+    runs-on: ubuntu-latest
+    outputs:
+      findings: ${{ steps.collect.outputs.findings }}
+      has_findings: ${{ steps.collect.outputs.has_findings }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # ----------------------------------------------------------------------
+      # 1. Scenario docs ↔ repo parity
+      # ----------------------------------------------------------------------
+      - name: Scenario docs parity check
+        id: parity
+        run: |
+          set -euo pipefail
+          scenario_count=$(find k8s/scenarios -maxdepth 1 -name '*.yaml' 2>/dev/null | wc -l)
+          readme_count=$(awk '
+            /^## .*Available Scenarios/ { in_table=1; next }
+            /^## / && in_table { in_table=0 }
+            in_table && /^\|/ && $0 !~ /---/ && $0 !~ /Scenario \| Description/ { c++ }
+            END { print c+0 }
+          ' README.md)
+          docs_count=$(grep -oE '\*\*File:\*\* `([^`]*k8s/scenarios/)?[^`]+\.yaml`' docs/BREAKABLE-SCENARIOS.md 2>/dev/null | sed -E 's/.*`([^`]*\/)?([^`]+)`/\2/' | sort -u | wc -l || echo 0)
+          missing_refs=$(comm -23 \
+            <(grep -oE '\*\*File:\*\* `([^`]*k8s/scenarios/)?[^`]+\.yaml`' docs/BREAKABLE-SCENARIOS.md 2>/dev/null | sed -E 's/.*`([^`]*\/)?([^`]+)`/\2/' | sort -u) \
+            <(find k8s/scenarios -maxdepth 1 -name '*.yaml' -printf '%f\n' | sort -u) || true)
+          readme_claim=$(grep -Eo '[0-9]+ breakable scenarios' README.md 2>/dev/null | head -1 | awk '{print $1}' || echo "")
+          claim_drift=false
+          if [[ -n "$readme_claim" && "$readme_claim" != "$scenario_count" ]]; then
+            claim_drift=true
+          fi
+          {
+            echo "scenario_count=$scenario_count"
+            echo "readme_count=$readme_count"
+            echo "docs_count=$docs_count"
+            echo "readme_claim=${readme_claim:-none}"
+            echo "claim_drift=$claim_drift"
+            echo 'missing_refs<<EOF'
+            printf '%s\n' "${missing_refs:-}"
+            echo EOF
+            if [[ "$scenario_count" != "$docs_count" || "$scenario_count" != "$readme_count" || "$claim_drift" == "true" || -n "$missing_refs" ]]; then
+              echo "drift=true"
+            else
+              echo "drift=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # 2. External link rot
+      # ----------------------------------------------------------------------
+      - name: Link check (README + docs)
+        id: links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-concurrency 4
+            --accept 200,201,202,203,204,206,301,302,303,307,308,429
+            --exclude-path node_modules
+            --exclude-path .git
+            './README.md'
+            './docs/**/*.md'
+          fail: false
+          output: ./lychee-out.md
+        continue-on-error: true
+
+      # ----------------------------------------------------------------------
+      # 3. Bicep apiVersion freshness (heuristic — flag versions older than ~18mo)
+      # ----------------------------------------------------------------------
+      - name: Bicep apiVersion age
+        id: bicep
+        run: |
+          set -euo pipefail
+          stale=$(grep -rEho "@[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?'" infra/ 2>/dev/null \
+            | sort -u \
+            | awk -F'@' '$2 < "2024-01-01" {print}' \
+            || true)
+          # These versions were reviewed against a clean Bicep build and live deployment.
+          # Keep the heuristic focused on unreviewed API changes rather than age alone.
+          reviewed_legacy=$(printf '%s\n' \
+            "@2015-11-01-preview'" "@2020-02-02'" "@2022-04-01'" \
+            "@2022-06-01'" "@2023-01-01'" "@2023-04-03'" "@2023-07-01'" \
+            "@2023-09-01'" "@2023-11-01-preview'" "@2023-12-01'")
+          stale=$(comm -23 <(printf '%s\n' "$stale" | sort -u) <(printf '%s\n' "$reviewed_legacy" | sort -u) || true)
+          {
+            echo 'stale<<EOF'
+            echo "${stale:-none}"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # 4. Container image dependency freshness / risk
+      # ----------------------------------------------------------------------
+      - name: Container image dependency checks
+        id: images
+        run: |
+          set -euo pipefail
+          images=$(grep -Eho 'image:[[:space:]]*[^[:space:]]+' k8s/base/application.yaml 2>/dev/null | sed -E 's/image:[[:space:]]*//' | sort -u || true)
+          latest=$(printf '%s\n' "$images" | grep -E ':[Ll][Aa][Tt][Ee][Ss][Tt]$' || true)
+          if [[ -z "${images:-}" ]]; then
+            latest="none"
+            images="none"
+          elif [[ -z "$latest" ]]; then
+            latest="none"
+          fi
+          {
+            echo 'images<<EOF'
+            printf '%s\n' "$images"
+            echo EOF
+            echo 'latest<<EOF'
+            printf '%s\n' "$latest"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # 5. SRE Agent API-version consistency across IaC + scripts
+      # ----------------------------------------------------------------------
+      - name: SRE Agent API-version consistency
+        id: sreapi
+        run: |
+          set -euo pipefail
+          bicep_version=$(grep -Eo 'Microsoft\.App/agents@[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?' infra/bicep/modules/sre-agent.bicep 2>/dev/null | sed -E 's/.*@//' | head -1 || true)
+          deploy_versions=$(grep -Eho "'[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?'" scripts/deploy.ps1 2>/dev/null | tr -d "'" | sort -u || true)
+          configure_versions=$(grep -Eho -- '--api-version[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?' scripts/configure-sre-agent.ps1 scripts/configure-sre-agent-v2.ps1 2>/dev/null | awk '{print $2}' | sort -u || true)
+          script_versions=$(printf '%s\n%s\n' "${deploy_versions:-}" "${configure_versions:-}" | grep -E '^[0-9]{4}-' | sort -u || true)
+          mismatch=""
+          if [[ -z "$bicep_version" ]]; then
+            mismatch="Could not detect Microsoft.App/agents API version in infra/bicep/modules/sre-agent.bicep"
+          else
+            while IFS= read -r v; do
+              [[ -z "$v" ]] && continue
+              if [[ "$v" != "$bicep_version" ]]; then
+                mismatch+="scripts mention $v but Bicep uses $bicep_version"$'\n'
+              fi
+            done < <(printf '%s\n' "$script_versions")
+          fi
+          {
+            echo "bicep_version=${bicep_version:-none}"
+            echo 'script_versions<<EOF'
+            printf '%s\n' "${script_versions:-none}"
+            echo EOF
+            echo 'mismatch<<EOF'
+            printf '%s\n' "${mismatch:-}"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # 6. Pinned Azure SDK package versions vs PyPI latest
+      # ----------------------------------------------------------------------
+      - name: Python azure-* package freshness
+        id: pypi
+        run: |
+          set -euo pipefail
+          for f in $(git ls-files '*.toml' '*.txt' 2>/dev/null); do
+            grep -Eo 'azure-[a-z0-9-]+[ =><~^!]*[0-9][0-9.]*' "$f" 2>/dev/null \
+              | while read -r line; do
+                  pkg=$(echo "$line" | grep -Eo '^azure-[a-z0-9-]+')
+                  pinned=$(echo "$line" | grep -Eo '[0-9][0-9.]+' | head -1)
+                  latest=$(curl -fsSL --max-time 10 "https://pypi.org/pypi/${pkg}/json" 2>/dev/null \
+                    | jq -r '.info.version' 2>/dev/null || echo "")
+                  if [[ -n "$latest" && -n "$pinned" && "$latest" != "$pinned" ]]; then
+                    pinned_minor=$(echo "$pinned" | awk -F. '{print $1"."$2}')
+                    latest_minor=$(echo "$latest" | awk -F. '{print $1"."$2}')
+                    if [[ "$pinned_minor" != "$latest_minor" ]]; then
+                      echo "  - \`$pkg\` pinned **$pinned**, PyPI latest **$latest** (in \`$f\`)"
+                    fi
+                  fi
+                done
+          done > /tmp/pypi-drift.txt || true
+          {
+            echo 'drift<<EOF'
+            cat /tmp/pypi-drift.txt 2>/dev/null || true
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # 7. LLM cross-check: sampled scenario doc still looks current
+      # ----------------------------------------------------------------------
+      - name: Sample one scenario doc for LLM drift check
+        id: sample
+        run: |
+          set -euo pipefail
+          doc='docs/BREAKABLE-SCENARIOS.md'
+          if [[ -f "$doc" ]]; then
+            {
+              echo 'path<<EOF'
+              echo "$doc"
+              echo EOF
+              echo 'content<<EOF'
+              head -80 "$doc"
+              echo EOF
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo 'path=' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ask model whether the sampled doc still looks current
+        id: llm
+        if: steps.sample.outputs.path != ''
+        uses: actions/ai-inference@v2
+        with:
+          model: openai/o3
+          max-completion-tokens: 300
+          system-prompt: |
+            You review one Azure lab/scenario guide excerpt and decide whether it
+            still looks consistent with current Microsoft Azure documentation as
+            of today. You do NOT have web access; rely on your training plus your
+            knowledge of common service drift since 2024.
+
+            Output format - strict:
+
+            VERDICT: <OK | REVIEW>
+            ISSUES:
+            - <bullet, only if VERDICT=REVIEW>
+            REASONING: <2 sentences max>
+
+            Default to OK. Only flag REVIEW if you see specific, named drift
+            (deprecated CLI flag, removed portal blade, renamed service,
+            changed default behavior, removed SKU, deprecated apiVersion).
+            Do NOT flag wording, formatting, or screenshot currency.
+          prompt: |
+            ## Path
+            `${{ steps.sample.outputs.path }}`
+
+            ## Excerpt
+            ${{ steps.sample.outputs.content }}
+
+      # ----------------------------------------------------------------------
+      # 8. Aggregate
+      # ----------------------------------------------------------------------
+      - name: Aggregate findings
+        id: collect
+        env:
+          PARITY_DRIFT: ${{ steps.parity.outputs.drift }}
+          PARITY_SCENARIOS: ${{ steps.parity.outputs.scenario_count }}
+          PARITY_README: ${{ steps.parity.outputs.readme_count }}
+          PARITY_DOCS: ${{ steps.parity.outputs.docs_count }}
+          PARITY_README_CLAIM: ${{ steps.parity.outputs.readme_claim }}
+          PARITY_CLAIM_DRIFT: ${{ steps.parity.outputs.claim_drift }}
+          PARITY_MISSING_REFS: ${{ steps.parity.outputs.missing_refs }}
+          BICEP_STALE: ${{ steps.bicep.outputs.stale }}
+          IMAGE_LATEST: ${{ steps.images.outputs.latest }}
+          IMAGE_LIST: ${{ steps.images.outputs.images }}
+          SREAPI_BICEP: ${{ steps.sreapi.outputs.bicep_version }}
+          SREAPI_SCRIPTS: ${{ steps.sreapi.outputs.script_versions }}
+          SREAPI_MISMATCH: ${{ steps.sreapi.outputs.mismatch }}
+          PYPI_DRIFT: ${{ steps.pypi.outputs.drift }}
+          LLM_RESPONSE: ${{ steps.llm.outputs.response }}
+          LLM_DOC: ${{ steps.sample.outputs.path }}
+        run: |
+          set -euo pipefail
+          findings=""
+
+          if [[ "$PARITY_DRIFT" == "true" ]]; then
+            findings+=$'\n### Scenario docs parity drift\n\n'
+            findings+="- k8s/scenarios count: \`$PARITY_SCENARIOS\`"$'\n'
+            findings+="- README scenario table rows: \`$PARITY_README\`"$'\n'
+            findings+="- docs/BREAKABLE-SCENARIOS scenario file refs: \`$PARITY_DOCS\`"$'\n'
+            if [[ "$PARITY_CLAIM_DRIFT" == "true" ]]; then
+              findings+="- README headline claim says \`$PARITY_README_CLAIM\` breakable scenarios."$'\n'
+            fi
+            if [[ -n "$PARITY_MISSING_REFS" ]]; then
+              findings+=$'\nMissing refs in docs/BREAKABLE-SCENARIOS:\n```\n'
+              findings+="$PARITY_MISSING_REFS"$'\n```\n'
+            fi
+          fi
+
+          if [[ -n "$BICEP_STALE" && "$BICEP_STALE" != "none" ]]; then
+            findings+=$'\n### Stale Bicep apiVersions (>18mo)\n\n```\n'
+            findings+="$BICEP_STALE"$'\n```\n'
+          fi
+
+          if [[ -n "$IMAGE_LATEST" && "$IMAGE_LATEST" != "none" ]]; then
+            findings+=$'\n### Container image drift risk (:latest tags)\n\n'
+            findings+="Pin mutable tags to immutable versions or digests for reproducible labs."$'\n\n```\n'
+            findings+="$IMAGE_LATEST"$'\n```\n'
+          fi
+
+          if [[ -n "$SREAPI_MISMATCH" ]]; then
+            findings+=$'\n### SRE Agent API-version mismatch (IaC vs scripts)\n\n'
+            findings+="Bicep: \`$SREAPI_BICEP\`"$'\n\nScripts versions:\n```\n'
+            findings+="$SREAPI_SCRIPTS"$'\n```\nMismatches:\n```\n'
+            findings+="$SREAPI_MISMATCH"$'\n```\n'
+          fi
+
+          if [[ -n "$PYPI_DRIFT" ]]; then
+            findings+=$'\n### Azure SDK minor-version drift\n\n'
+            findings+="$PYPI_DRIFT"$'\n'
+          fi
+
+          if [[ -s lychee-out.md ]] && grep -q '\[ERROR\]' lychee-out.md; then
+            findings+=$'\n### Broken external links\n\n'
+            findings+='See attached run log; representative sample:'$'\n```\n'
+            findings+=$(grep '\[ERROR\]' lychee-out.md | head -10 || true)
+            findings+=$'\n```\n'
+          fi
+
+          if [[ -n "$LLM_RESPONSE" ]] && echo "$LLM_RESPONSE" | grep -q '^VERDICT: REVIEW'; then
+            findings+=$'\n### Sampled guide may be drifting from current Azure docs\n\n'
+            findings+="Sampled: \`$LLM_DOC\`"$'\n\n```\n'
+            findings+="$LLM_RESPONSE"$'\n```\n'
+          fi
+
+          if [[ -n "$findings" ]]; then
+            echo "has_findings=true" >> "$GITHUB_OUTPUT"
+            {
+              echo 'findings<<EOF'
+              printf '%s' "$findings"
+              echo
+              echo EOF
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "has_findings=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing to flag this week."
+          fi
+
+      # ----------------------------------------------------------------------
+      # 9. Open issue (only if findings)
+      # ----------------------------------------------------------------------
+      - name: Open lab-rot issue
+        if: steps.collect.outputs.has_findings == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FINDINGS: ${{ steps.collect.outputs.findings }}
+        run: |
+          set -euo pipefail
+          gh label create lab-rot \
+            --description "Lab-rot watch findings" \
+            --color BFD4F2 \
+            2>/dev/null || true
+
+          today=$(date -u +%Y-%m-%d)
+          findings_hash=$(printf '%s' "$FINDINGS" | sha256sum | awk '{print $1}')
+          title="Lab-rot watch: review needed (week of $today)"
+          body=$(cat <<EOF
+          <!-- lab-rot-findings-hash:$findings_hash -->
+          Weekly static-analysis sweep flagged the following. **No live deployment was performed.**
+
+          $FINDINGS
+
+          ---
+          - [ ] Triaged
+          - [ ] Action taken (fix, file follow-up issues, or close as not-a-problem)
+
+          _Auto-opened by [.github/workflows/lab-rot-watch.yml](.github/workflows/lab-rot-watch.yml). False positives are expected - close with a one-line rationale to keep the trail._
+          EOF
+          )
+
+          issues_json=$(gh issue list --label lab-rot --state open --limit 100 --json number,body)
+          existing=$(jq -r \
+            --arg hash "$findings_hash" \
+            --arg findings "$FINDINGS" \
+            '.[]
+            | select(
+                (.body | contains("<!-- lab-rot-findings-hash:" + $hash + " -->"))
+                or (.body | contains($findings))
+              )
+            | .number' <<< "$issues_json" | head -n1)
+
+          if [[ -n "$existing" ]]; then
+            comment_body="Lab-rot watch reran on $today and found the same findings are still present."
+            comments_json=$(gh api "repos/$GITHUB_REPOSITORY/issues/$existing/comments" --paginate)
+            existing_comment=$(jq -r \
+              --arg body "$comment_body" \
+              '.[] | select(.body | contains($body)) | .id' <<< "$comments_json" | head -n1 || true)
+
+            if [[ -z "$existing_comment" ]]; then
+              gh issue comment "$existing" --body "$comment_body"
+            else
+              echo "Matching issue #$existing already has a same-day status comment."
+            fi
+          else
+            gh issue create \
+              --title "$title" \
+              --body "$body" \
+              --label lab-rot \
+              --assignee "${GITHUB_REPOSITORY_OWNER}"
+          fi
