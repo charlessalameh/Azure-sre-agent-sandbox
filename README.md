@@ -2,6 +2,36 @@
 
 A fully automated Azure environment for demonstrating **Azure SRE Agent** capabilities. Deploy a breakable multi-service application on AKS and let SRE Agent diagnose and fix the issues!
 
+## 📝 About this version
+
+This is my extended copy of the open-source
+[azure-sre-agent-sandbox](https://github.com/matthansen0/azure-sre-agent-sandbox)
+by Matt Hansen (MIT licensed — see [LICENSE](LICENSE)). All credit for the original lab goes to him.
+
+**What I added**
+
+- **Low-cost lab profile** — 1 system + 2 user nodes, AKS **Free** tier, and capped autoscaling
+  (`infra/bicep/main.bicepparam`, new `aksSkuTier` / `*NodeMaxCount` parameters). Roughly halves the
+  infrastructure cost; defaults in `main.bicep` keep the original behaviour.
+- **[Lab journal](docs/LAB-JOURNAL.md)** — a dated record of two real test sessions: setup issues on macOS,
+  quota and provider gotchas, what failed on day 1, what fixed it on day 2, and the actual cost.
+
+**Result (OOMKilled scenario, Sweden Central, Sept 2026)**
+
+- Break → Azure Monitor alert in ~2 min → agent root cause in ~5 min, with no prompt.
+- Correct diagnosis (16 MiB limit, OOMKilled/137, caused by the rollout) and a rollback proposed in Review
+  mode, applied only after approval.
+- Whole two-day experiment cost about **$15** in Azure credits.
+
+**Tips before you deploy (learned the hard way)**
+
+1. Register `Microsoft.Compute` and check the **DSv5 family** vCPU quota in your region, not just the regional total.
+2. After deploying, finish the agent's onboarding in the portal and **connect Logs** (Log Analytics + App Insights)
+   *before* breaking anything; give it ~15 minutes.
+3. Authorise or remove the Outlook connector; a failed connector can break investigations.
+4. Review and switch off any scheduled tasks the agent creates for itself — they can cost more than the investigations.
+5. Always pass your resource group to `destroy.ps1` (its default is `rg-srelab-eastus2`).
+
 ## 🎯 What This Lab Provides
 
 - **Azure Kubernetes Service (AKS)** with a multi-pod e-commerce demo application
@@ -229,6 +259,10 @@ sre-config/
 
 Contributions welcome! Feel free to open issues or submit PRs.
 
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE). Original work © 2026 Matt Hansen; additions in this version by Charlie Salameh.
 
 ---
 

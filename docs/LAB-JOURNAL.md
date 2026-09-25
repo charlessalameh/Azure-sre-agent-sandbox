@@ -13,10 +13,10 @@ material for a LinkedIn write-up once the lab has been deployed and tested.
 |---|---|
 | 1. Repo setup and analysis | ✅ Done |
 | 2. Cost analysis and low-cost profile | ✅ Done (changes pending my review/commit) |
-| 3. Prerequisites (Docker, dev container, login, providers, quota, budget) | ⏳ Next |
-| 4. Deploy | ⬜ |
-| 5. Break scenarios and SRE Agent diagnosis | ⬜ |
-| 6. Tear down and actual cost | ⬜ |
+| 3. Prerequisites (Docker, dev container, login, providers, quota, budget) | 🔄 In progress — dev container ✅, login ✅, Owner ✅, quota ✅, what-if ✅ |
+| 4. Deploy | ✅ Session 1 (destroyed after) |
+| 5. Break scenarios and SRE Agent diagnosis | ✅ OOM: correct root cause in ~5 min (session 2) |
+| 6. Tear down and actual cost | ✅ ~$15 total |
 | 7. Write-up / LinkedIn post | ⬜ |
 
 ---
@@ -87,13 +87,136 @@ investigations on a cheaper model): **~$5–10**.
   prevents runaway node cost.
 - **Validated:** Bicep build and params build succeed; no new warnings.
 
+### 2026-09-23 — Dev container setup on macOS (lessons learned)
+- **Docker CLI not found in VS Code:** Docker Desktop installed `docker` in
+  `~/.docker/bin`, which bash doesn't load. Fix: Docker Desktop → Settings →
+  Advanced → *System* CLI install (links to `/usr/local/bin`), plus
+  `"dev.containers.dockerPath"` in VS Code user settings. Without it, the Dev
+  Containers extension wrongly starts its own "Docker Install" task.
+- **"A mount config is invalid":** `devcontainer.json` bind-mounts `~/.azure`
+  (to share the Azure login); the folder didn't exist on a fresh Mac.
+  Fix: `mkdir -p ~/.azure`, then Retry. *Candidate repo fix:* create it in an
+  `initializeCommand`.
+- **Copilot Chat install error in build log:** VS Code 1.138 ships Copilot Chat
+  built in (0.66.0); the repo's extension list pins an older one (0.48.1).
+  Harmless. *Candidate repo fix:* drop `GitHub.copilot*` from the list.
+- **Invalid VS Code settings.json** after manual edits (missing commas) blocked
+  settings sync — rewrote as one valid JSON object.
+- **Vim extension** was capturing keystrokes (looked like "files are locked").
+- **Result:** container ready — Azure CLI 2.90.0, kubectl 1.37.0,
+  PowerShell 7.6.6; lab `menu` loaded.
+
+### 2026-09-23 — Azure access checks
+- Logged in with device code. Role: **Owner** on the subscription (+ User Access
+  Administrator at root) — sufficient for the role assignments the lab creates.
+
+### 2026-09-23 — Subscription and quota
+- Subscription type: **pay-as-you-go** (PAYAYG).
+- `Microsoft.Compute` provider was **NotRegistered** on the subscription —
+  `az vm list-usage` returned nothing until it was registered.
+- Sweden Central quota: Total Regional vCPUs = 10, but **Standard DSv5 Family
+  vCPUs = 0** (the lab's `D2s_v5` nodes would have failed). Raised DSv5 to
+  **10** via Portal → Quotas → My quotas (self-service, pencil icon).
+- Lesson: on a fresh subscription, check *family* quota, not just regional.
+
+### 2026-09-23 — Pre-flight: Bicep fix + what-if dry run
+- **Bicep missing in dev container** (script printed "✅ Bicep: ERROR: not
+  found"). Fix: `az bicep install` → Bicep 0.47.16. *Candidate repo fix:* make
+  the prerequisite check fail properly, and install Bicep in `post-create.sh`.
+- **What-if result: 32 resources to create, no errors.** Confirmed the low-cost
+  profile is applied: AKS `sku.tier = Free`; system pool 1 node (max 2), user
+  pool 2 nodes (max 3), all `Standard_D2s_v5`.
+- Notable in the plan: SRE Agent `sre-srelab` with access level **High** and
+  action mode **Review**, incident management wired to **Azure Monitor**, AKS in
+  the agent's knowledge graph; 4 one-minute log alerts (CrashLoop/OOM, HTTP 5xx,
+  failed/pending pods, restart spike); Container Insights (ContainerLogV2) +
+  Managed Prometheus + Grafana; Azure Policy and Key Vault CSI add-ons on AKS.
+- Only warnings are two pre-existing Bicep lint warnings in `aks.bicep`.
+
+### 2026-09-23 — Session 1: deploy + first scenario (OOMKilled)
+- **Deploy:** succeeded in Sweden Central on the low-cost profile. Config
+  verifier: 18/18 checks passed. Evaluation banner: always-on waived to 23 Oct.
+- **Break:** `break-oom` → order-service OOMKilled / CrashLoopBackOff within
+  ~2 min (4 restarts in 3 min); rest of the app healthy.
+- **What worked:** 3 Azure Monitor alerts fired (crashloop-oom Sev1,
+  pod-failures Sev2, pod-restarts Sev2) → 3 incidents auto-acknowledged and
+  routed to the `aks-pod-failure-handler` response plan → the agent started
+  investigating **with no prompt**, running a textbook sequence with risk labels:
+  events → ReplicaSets → svc/endpoints → `logs --previous` → rollout history.
+- **What failed:** agent replies ended in *"internal error"*; the agent's own
+  retry said *"temporary AI model connection error"*. One incident was marked
+  "Completed" although it never produced a diagnosis. No root-cause summary
+  was obtained.
+- **Also observed:** Operations hub showed **all 3 connectors Failed**
+  (azure-monitor, microsoft-learn, outlook) and "Code and Logs not
+  configured". Outlook was never authorised — and the incident-handler and
+  cluster-health-monitor agents list `SendOutlookEmail` as a tool.
+- **Ended:** destroyed the environment (uses evaluation slot 1 of 3).
+
+**Hypotheses to test in session 2** (not yet confirmed)
+1. Model backend/capacity issue on a brand-new agent → switch model (e.g.
+   GPT-5.2) and allow a 15–20 min warm-up before breaking anything.
+2. Failed/unauthorised connectors break the agent's tool loading → authorise
+   or remove Outlook (personal @hotmail account may have no M365 mailbox),
+   reconnect azure-monitor, disable Learn MCP if it stays failed.
+3. Missing data sources → connect Logs (log-srelab, appi-srelab) in
+   "Complete setup".
+4. Chat access → confirm the signed-in user has *SRE Agent Administrator*.
+
+### 2026-09-25 — Session 2: redeploy + OOMKilled scenario (success)
+- **Deploy:** clean; verifier 18/18 and telemetry gate passed (ContainerLogV2 +
+  KubePodInventory flowing). Evaluation slot 2 of 3 (waived to 25 Oct).
+- **What changed vs session 1:** completed the agent's onboarding page and
+  connected **Logs** (log-srelab / appi-srelab) *before* breaking anything;
+  model provider **Azure OpenAI**; let the agent onboard and baseline first.
+  Result: no "internal error" at all this session.
+- **Onboarding:** the agent mapped the architecture into memory files, tagged
+  facts [verified]/[unreachable], and flagged a real config gap unprompted
+  (`product-service` references a missing `ai-service:5001`).
+- **Blind test:** told the agent a failure would be injected without saying
+  which. It baselined (3 Log Analytics queries + pods/events/deployments),
+  refused to blame earlier startup blips, and set up its own every-minute
+  read-only monitor (it expired before the break).
+- **Timeline (UTC):** 08:59:20 `break-oom` → 09:01:23 Sev1 alert/incident →
+  ~09:03 auto-investigation starts → **09:04 root cause** (~5 min end to end).
+- **Agent's diagnosis:** revision 2 at 08:59 cut order-service to a **16 MiB**
+  limit (Node old-space 64 MiB); both replicas **OOMKilled / exit 137**,
+  CrashLoopBackOff, **service has no endpoints**. Evidence: revision 1 had
+  image 2.2.0 with 256 MiB limit / 128 MiB request; node shows no memory
+  pressure; kernel events confirm cgroup OOM kills.
+- **Proposed fix:** roll back `pets/order-service` to revision 1 — waits for
+  approval (Review mode).
+- **Score vs ground truth:** correct service, correct cause, exact limit value,
+  correct change attribution (rollout), impact (no endpoints), safe fix. ✅
+- **Gap:** "could not post an update to the Azure Monitor alert — no
+  notification capability" (Outlook not authorised).
+
+### 2026-09-25 — Session 2 cost (Agent consumption page)
+- **Total active flow today: 288 AAU** (shown as 288/10,000, 3%).
+  Chats 46 · Incidents 50 · **Scheduled tasks 192** · Triggers 1.
+- Per thread: [Sev1] crashloop-oom diagnosis **13 AAU**; [Sev2] pod-failures
+  16 AAU; agent-created "Pets injected-failure investigation" monitor
+  **151 AAU** (every-minute runs, still Active after its stated end time);
+  hourly-automation-health 7 AAU.
+- **Lesson:** the incident diagnosis itself cost ~13 AAU (≈ $1.30 at the
+  commonly quoted ~$0.10/AAU — confirm in Cost Management). Two-thirds of the
+  spend came from a scheduled task the agent created itself. Review and switch
+  off agent-created scheduled tasks after a test.
+
+### 2026-09-25 — Session 2 wrap-up
+- Approved the agent's rollback; order-service back to Running, store orders working.
+- **Actual cost of the whole experiment (both sessions): about $15 USD**, taken from
+  Azure free-tier credits.
+- Environment destroyed. Repo prepared for public sharing: original MIT LICENSE
+  restored, credit and "About this version" section added to the README.
+
 ---
 
 ## Scenario results *(fill in during the session)*
 
 | Scenario | What I broke | Agent's diagnosis (summary) | Correct? | Time to root cause | Fix suggested / applied | AAU used |
 |---|---|---|---|---|---|---|
-| OOMKilled | | | | | | |
+| OOMKilled | Memory limit cut to 16 MiB on order-service | 16 MiB limit → OOMKilled/137, no endpoints; blamed 08:59 rollout (session 2) | ✅ Yes | ~5 min break→RCA (2 min to alert) | Roll back to revision 1 (approved, applied) | 13 |
 | CrashLoop | | | | | | |
 | ImagePullBackOff | | | | | | |
 | HighCPU | | | | | | |
@@ -104,7 +227,7 @@ investigations on a cheaper model): **~$5–10**.
 | MongoDBDown | | | | | | |
 | ServiceMismatch | | | | | | |
 
-**Actual cost of the session:** _(from Cost Management, 24–48 h after teardown)_
+**Actual cost:** about $15 USD for both sessions (Azure credits).
 
 ---
 
