@@ -13,8 +13,12 @@ by Matt Hansen (MIT licensed — see [LICENSE](LICENSE)). All credit for the ori
 - **Low-cost lab profile** — 1 system + 2 user nodes, AKS **Free** tier, and capped autoscaling
   (`infra/bicep/main.bicepparam`, new `aksSkuTier` / `*NodeMaxCount` parameters). Roughly halves the
   infrastructure cost; defaults in `main.bicep` keep the original behaviour.
+- **[Architecture, scripts & cost control guide](docs/ARCHITECTURE-GUIDE.md)** — every Bicep module, script and
+  SRE Agent component explained, with an editable draw.io architecture diagram and an animated incident flow.
 - **[Lab journal](docs/LAB-JOURNAL.md)** — a dated record of two real test sessions: setup issues on macOS,
   quota and provider gotchas, what failed on day 1, what fixed it on day 2, and the actual cost.
+
+![Architecture](docs/diagrams/architecture.drawio.svg)
 
 **Result (OOMKilled scenario, Sweden Central, Sept 2026)**
 
